@@ -9,7 +9,7 @@ Provides functions for creating visualizations including:
 
 from .visualizers import (plot_clusters, plot_elbow, plot_heatmap, plot_pca,
                           plot_pca_cumulative_variance, plot_pca_variance,
-                          plot_silhouette_scores, plot_umap)
+                          plot_silhouette_scores, plot_umap, plot_cluster_distributions)
 
 __all__ = [
     "plot_pca_variance",
@@ -20,4 +20,5 @@ __all__ = [
     "plot_clusters",
     "plot_silhouette_scores",
     "plot_elbow",
+    "plot_cluster_distributions",
 ]

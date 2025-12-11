@@ -140,3 +140,38 @@ def apply_umap(
     if return_model:
         return transformed, reducer
     return transformed
+
+
+
+def pca_elbow(explained_variance_ratio):
+    """
+    Detect elbow in PCA scree plot using the maximum distance to chord method.
+    This method is specifically for PCA, not clustering inertia.
+
+    Args:
+        explained_variance_ratio: array-like list of variance explained per PC.
+
+    Returns:
+        int: elbow point (1-based PC index)
+    """
+    y = np.array(explained_variance_ratio)
+    x = np.arange(1, len(y) + 1)
+
+    # Normalize
+    x_norm = (x - x.min()) / (x.max() - x.min())
+    y_norm = (y - y.min()) / (y.max() - y.min())
+
+    # Line from first to last PC
+    p1 = np.array([x_norm[0], y_norm[0]])
+    p2 = np.array([x_norm[-1], y_norm[-1]])
+    line_vec = p2 - p1
+
+    # Distances
+    distances = np.array([
+        np.abs(np.cross(line_vec, np.array([x_norm[i], y_norm[i]]) - p1)) /
+        np.linalg.norm(line_vec)
+        for i in range(len(x_norm))
+    ])
+
+    elbow_idx = int(np.argmax(distances))
+    return elbow_idx + 1

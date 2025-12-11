@@ -6,10 +6,11 @@ Provides functions for clustering samples including:
 - Agglomerative (Hierarchical) clustering
 """
 
-from .algorithms import kmeans_cluster, gmm_cluster, agglomerative_cluster
+from .algorithms import kmeans_cluster, gmm_cluster, agglomerative_cluster, compute_cluster_table
 
 __all__ = [
     "kmeans_cluster",
     "gmm_cluster",
     "agglomerative_cluster",
+    "compute_cluster_table",
 ]

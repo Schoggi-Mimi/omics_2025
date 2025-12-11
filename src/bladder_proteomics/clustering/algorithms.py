@@ -159,3 +159,20 @@ def agglomerative_cluster(
     if return_model:
         return labels, agg
     return labels
+
+def compute_cluster_table(pca_df, n_pc, k):
+    """Compute cluster counts and percentages using the same logic as the user's code."""
+    
+    X = pca_df.iloc[:, :n_pc]
+    labels = kmeans_cluster(X, n_clusters=k)  # unchanged logic
+
+    cluster_ids, counts = np.unique(labels, return_counts=True)
+    total = len(labels)
+
+    df_cluster = pd.DataFrame({
+        "cluster": cluster_ids,
+        "count": counts,
+        "percentage": counts / total * 100
+    }).sort_values("count", ascending=False)
+
+    return df_cluster, labels

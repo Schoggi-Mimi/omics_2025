@@ -9,6 +9,7 @@ import seaborn as sns
 from matplotlib.axes import Axes
 from matplotlib.colors import ListedColormap
 from matplotlib.figure import Figure
+from ..clustering import compute_cluster_table
 
 
 def plot_pca_variance(pca_model, max_components=20, figsize=(6,4)):
@@ -42,6 +43,7 @@ def plot_pca_cumulative_variance(pca_model, threshold=0.80, figsize=(6,4)):
     var_ratio = pca_model.explained_variance_ratio_
     cum_var = np.cumsum(var_ratio) * 100
     components = np.arange(1, len(cum_var) + 1)
+    
 
     plt.figure(figsize=figsize)
     plt.plot(components, cum_var, marker='o')
@@ -52,40 +54,71 @@ def plot_pca_cumulative_variance(pca_model, threshold=0.80, figsize=(6,4)):
     plt.grid(True)
     plt.show()
 
-def plot_silhouette_scores(scores: dict):
+def plot_silhouette_scores(scores: dict, ax: Optional[Axes] = None):
     ks = list(scores.keys())
     vals = list(scores.values())
 
-    plt.figure(figsize=(6, 4))
-    plt.plot(ks, vals, marker='o', linewidth=2, markersize=8)
-    plt.xticks(ks)
-    plt.xlabel("Number of clusters (k)")
-    plt.ylabel("Silhouette Score")
-    plt.title("Silhouette Analysis for Optimal k")
-    plt.grid(alpha=0.3)
-    plt.show()
+    # If no axis is provided, create a new figure and axis
+    created_fig = False
+    if ax is None:
+        fig, ax = plt.subplots(figsize=(6, 4))
+        created_fig = True
 
-def plot_elbow(inertias: dict):
+    ax.plot(ks, vals, marker='o', linewidth=2, markersize=8)
+    ax.set_xticks(ks)
+    ax.set_xlabel("Number of clusters (k)")
+    ax.set_ylabel("Silhouette Score")
+    ax.set_title("Silhouette Analysis for Optimal k")
+    ax.grid(alpha=0.3)
+
+    # Only show if we created the figure inside
+    if created_fig:
+        plt.show()
+
+def plot_elbow(inertias: dict, ax: Optional[Axes] = None):
     ks = list(inertias.keys())
     vals = list(inertias.values())
 
-    plt.figure(figsize=(6, 4))
-    plt.plot(ks, vals, marker='o', linewidth=2, markersize=8)
-    plt.xticks(ks)
-    plt.xlabel("Number of clusters (k)")
-    plt.ylabel("Inertia (WCSS)")
-    plt.title("Elbow Method for Optimal k")
-    plt.grid(alpha=0.3)
-    plt.show()
+    created_fig = False
+    if ax is None:
+        fig, ax = plt.subplots(figsize=(6, 4))
+        created_fig = True
 
+    ax.plot(ks, vals, marker='o', linewidth=2, markersize=8)
+    ax.set_xticks(ks)
+    ax.set_xlabel("Number of clusters (k)")
+    ax.set_ylabel("Inertia (WCSS)")
+    ax.set_title("Elbow Method for Optimal k")
+    ax.grid(alpha=0.3)
+
+    if created_fig:
+        plt.show()
+
+# def _choose_cmap(labels):
+#     n_clusters = len(np.unique(labels))
+#     if n_clusters == 2:
+#         return ListedColormap(["#1f77b4", "#ff7f0e"])  # blue & orange
+#     elif n_clusters == 3:
+#         return ListedColormap(["#1f77b4", "#ff7f0e", "#2ca02c"])  # blue/orange/green
+#     else:
+#         return "tab10"
+
+# The above is a simple version, only applied for n_cluster =2. 
+# Below is a version that handles more clusters.
 def _choose_cmap(labels):
     n_clusters = len(np.unique(labels))
-    if n_clusters == 2:
-        return ListedColormap(["#1f77b4", "#ff7f0e"])  # blue & orange
-    elif n_clusters == 3:
-        return ListedColormap(["#1f77b4", "#ff7f0e", "#2ca02c"])  # blue/orange/green
+
+    # For small number of clusters, use high-quality colors.
+    if n_clusters <= 10:
+        cmap = plt.cm.get_cmap("tab10", n_clusters)
+    elif n_clusters <= 20:
+        cmap = plt.cm.get_cmap("tab20", n_clusters)
     else:
-        return "tab10"
+        # fallback: continuous color spectrum
+        cmap = plt.cm.get_cmap("hsv", n_clusters)
+
+    return cmap
+
     
 def plot_pca(
     pca_data: Union[np.ndarray, pd.DataFrame],
@@ -389,3 +422,96 @@ def plot_clusters(
     )
     
     return fig, ax
+
+
+def plot_cluster_distributions(
+    pca_df,
+    n_pc_list,
+    k,
+    figsize=(5, 5),
+    cmap="tab10"
+):
+    """
+    Plot cluster-size distributions for one or multiple PCA dimensionalities.
+    X-axis = rank (clusters sorted by size).
+    Each rank shows side-by-side bars for different n_pc values.
+
+    Args:
+        pca_df: PCA-transformed dataframe (samples × PCs)
+        n_pc_list: int or list of ints (e.g. 4 or [4,5] or [3,4,5])
+        k: number of clusters for k-means
+        figsize: size of the output figure
+        cmap: matplotlib colormap (must have >= len(n_pc_list) colors)
+    """
+
+    # -----------------------------
+    # Ensure list form
+    # -----------------------------
+    if isinstance(n_pc_list, int):
+        n_pc_list = [n_pc_list]
+
+    n_versions = len(n_pc_list)
+
+    # Color map for different PC choices
+    colors = plt.cm.get_cmap(cmap, n_versions)
+
+    # -----------------------------
+    # Compute cluster distributions
+    # -----------------------------
+    tables = {}
+    max_pct = 0
+    max_clusters = 0
+
+    for idx, npc in enumerate(n_pc_list):
+        df_cluster, _ = compute_cluster_table(pca_df, npc, k)
+        df_cluster = df_cluster.sort_values("percentage", ascending=False).reset_index(drop=True)
+        df_cluster["rank"] = np.arange(1, len(df_cluster) + 1)
+
+        tables[npc] = df_cluster
+        max_pct = max(max_pct, df_cluster["percentage"].max())
+        max_clusters = max(max_clusters, len(df_cluster))
+
+    # -----------------------------
+    # Prepare x-axis positions
+    # -----------------------------
+    ranks = np.arange(1, max_clusters + 1)
+    x = np.arange(len(ranks))
+
+    bar_width = 0.8 / n_versions  # ensure bars fit within 1 unit width
+
+    # -----------------------------
+    # Plot
+    # -----------------------------
+    plt.figure(figsize=figsize)
+
+    for i, npc in enumerate(n_pc_list):
+        df_cluster = tables[npc]
+
+        # Align percentages by rank (pad with zeros if needed)
+        y = np.zeros(max_clusters)
+        y[: len(df_cluster)] = df_cluster["percentage"]
+
+        plt.bar(
+            x + (i - (n_versions - 1)/2) * bar_width,
+            y,
+            width=bar_width,
+            label=f"PC={npc}",
+            alpha=0.85,
+            color=colors(i)
+        )
+
+    # -----------------------------
+    # Decorations
+    # -----------------------------
+    plt.xticks(x, ranks)
+    plt.xlabel("Cluster Rank (largest → smallest)")
+    plt.ylabel("Percentage (%)")
+    plt.title(f"Cluster Size Distribution (k={k})")
+    plt.ylim(0, max_pct * 1.15)
+    plt.grid(True, linestyle="--", alpha=0.3)
+    plt.legend(title="n_pc")
+
+    plt.tight_layout()
+    plt.show()
+
+
