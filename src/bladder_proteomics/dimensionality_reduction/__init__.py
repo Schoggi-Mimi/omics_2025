@@ -6,10 +6,11 @@ Provides functions for:
 - PCA elbow detection (pca_elbow)
 """
 
-from .reducers import apply_pca, apply_umap, pca_elbow
+from .reducers import apply_pca, apply_umap, pc_names, pca_elbow
 
 __all__ = [
     "apply_pca",
     "apply_umap",
     "pca_elbow",
+    "pc_names"
 ]

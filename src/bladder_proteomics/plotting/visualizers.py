@@ -9,6 +9,8 @@ import seaborn as sns
 from matplotlib.axes import Axes
 from matplotlib.colors import ListedColormap
 from matplotlib.figure import Figure
+from matplotlib.lines import Line2D
+
 from ..clustering import compute_cluster_table
 
 
@@ -54,7 +56,7 @@ def plot_pca_cumulative_variance(pca_model, threshold=0.80, figsize=(6,4)):
     plt.grid(True)
     plt.show()
 
-def plot_silhouette_scores(scores: dict, ax: Optional[Axes] = None):
+def plot_silhouette_scores(scores: dict, ax: Optional[Axes] = None, title: str = "Silhouette Analysis for Optimal k"):
     ks = list(scores.keys())
     vals = list(scores.values())
 
@@ -68,14 +70,14 @@ def plot_silhouette_scores(scores: dict, ax: Optional[Axes] = None):
     ax.set_xticks(ks)
     ax.set_xlabel("Number of clusters (k)")
     ax.set_ylabel("Silhouette Score")
-    ax.set_title("Silhouette Analysis for Optimal k")
+    ax.set_title(title)
     ax.grid(alpha=0.3)
 
     # Only show if we created the figure inside
     if created_fig:
         plt.show()
 
-def plot_elbow(inertias: dict, ax: Optional[Axes] = None):
+def plot_elbow(inertias: dict, ax: Optional[Axes] = None, title: str = "Elbow Method for Optimal k"):
     ks = list(inertias.keys())
     vals = list(inertias.values())
 
@@ -88,36 +90,43 @@ def plot_elbow(inertias: dict, ax: Optional[Axes] = None):
     ax.set_xticks(ks)
     ax.set_xlabel("Number of clusters (k)")
     ax.set_ylabel("Inertia (WCSS)")
-    ax.set_title("Elbow Method for Optimal k")
+    ax.set_title(title)
     ax.grid(alpha=0.3)
 
     if created_fig:
         plt.show()
 
+
 # def _choose_cmap(labels):
 #     n_clusters = len(np.unique(labels))
-#     if n_clusters == 2:
-#         return ListedColormap(["#1f77b4", "#ff7f0e"])  # blue & orange
-#     elif n_clusters == 3:
-#         return ListedColormap(["#1f77b4", "#ff7f0e", "#2ca02c"])  # blue/orange/green
+
+#     # For small number of clusters, use high-quality colors.
+#     if n_clusters <= 10:
+#         cmap = plt.cm.get_cmap("tab10", n_clusters)
+#     elif n_clusters <= 20:
+#         cmap = plt.cm.get_cmap("tab20", n_clusters)
 #     else:
-#         return "tab10"
+#         # fallback: continuous color spectrum
+#         cmap = plt.cm.get_cmap("hsv", n_clusters)
 
-# The above is a simple version, only applied for n_cluster =2. 
-# Below is a version that handles more clusters.
-def _choose_cmap(labels):
+#     return cmap
+
+CLUSTER_COLORS = [
+    "#1f77b4",  # blue
+    "#ff7f0e",  # orange
+    "#2ca02c",  # green
+    "#d62728",  # red
+    "#9467bd",  # purple
+    "#8c564b",  # brown
+    "#e377c2",  # pink
+    "#7f7f7f",  # gray
+    "#bcbd22",  # olive
+    "#17becf",  # cyan
+]
+
+def _choose_fixed_cmap(labels):
     n_clusters = len(np.unique(labels))
-
-    # For small number of clusters, use high-quality colors.
-    if n_clusters <= 10:
-        cmap = plt.cm.get_cmap("tab10", n_clusters)
-    elif n_clusters <= 20:
-        cmap = plt.cm.get_cmap("tab20", n_clusters)
-    else:
-        # fallback: continuous color spectrum
-        cmap = plt.cm.get_cmap("hsv", n_clusters)
-
-    return cmap
+    return ListedColormap(CLUSTER_COLORS[:n_clusters])
 
     
 def plot_pca(
@@ -173,12 +182,22 @@ def plot_pca(
     
     # Plot
     if labels is not None:
-        cmap_used = _choose_cmap(labels)
-        scatter = ax.scatter(x, y, c=labels, alpha=alpha, cmap=cmap_used, s=50)
-        plt.colorbar(scatter, ax=ax, label="Cluster")
+        cmap_used = _choose_fixed_cmap(labels)
+        scatter = ax.scatter(x, y, c=labels, cmap=cmap_used, alpha=alpha, s=50, vmin=0, vmax=len(np.unique(labels)) - 1)
+        legend_elements = [
+            Line2D(
+                [0], [0],
+                marker='o',
+                color='w',
+                label=f'Cluster {i}',
+                markerfacecolor=CLUSTER_COLORS[i],
+                markersize=8
+            )
+            for i in np.unique(labels)
+        ]
+        ax.legend(handles=legend_elements, title="Cluster")
     else:
         ax.scatter(x, y, alpha=alpha, s=50)
-    
     ax.set_xlabel(xlabel, fontsize=12)
     ax.set_ylabel(ylabel, fontsize=12)
     ax.set_title(title, fontsize=14, fontweight="bold")
@@ -197,7 +216,6 @@ def plot_umap(
     title: str = "UMAP Plot",
     figsize: Tuple[float, float] = (10, 8),
     alpha: float = 0.7,
-    cmap: str = "tab10",
     save_path: Optional[str] = None,
     ax: Optional[Axes] = None
 ) -> Tuple[Figure, Axes]:
@@ -243,9 +261,21 @@ def plot_umap(
     
     # Plot
     if labels is not None:
-        cmap_used = _choose_cmap(labels)
-        scatter = ax.scatter(x, y, c=labels, alpha=alpha, cmap=cmap_used, s=50)
-        plt.colorbar(scatter, ax=ax, label="Cluster")
+        # cmap_used = _choose_cmap(labels)
+        cmap_used = _choose_fixed_cmap(labels)
+        scatter = ax.scatter(x, y, c=labels, cmap=cmap_used, alpha=alpha, s=50, vmin=0, vmax=len(np.unique(labels)) - 1)
+        legend_elements = [
+            Line2D(
+                [0], [0],
+                marker='o',
+                color='w',
+                label=f'Cluster {i}',
+                markerfacecolor=CLUSTER_COLORS[i],
+                markersize=8
+            )
+            for i in np.unique(labels)
+        ]
+        ax.legend(handles=legend_elements, title="Cluster")
     else:
         ax.scatter(x, y, alpha=alpha, s=50)
     
@@ -515,3 +545,71 @@ def plot_cluster_distributions(
     plt.show()
 
 
+def _palette_for_labels(labels: pd.Series) -> dict:
+    """Map each cluster label to a fixed color."""
+    unique = sorted(pd.unique(labels))
+    return {lab: CLUSTER_COLORS[i % len(CLUSTER_COLORS)] for i, lab in enumerate(unique)}
+
+def plot_2d_embedding(
+    emb2d: pd.DataFrame,
+    labels: pd.Series,
+    title: str,
+    ax: plt.Axes | None = None,
+    x: str | None = None,
+    y: str | None = None,
+) -> plt.Axes:
+    """2D scatter with legend (no colorbar), using fixed colors per cluster label."""
+    if ax is None:
+        ax = plt.gca()
+    x = x or emb2d.columns[0]
+    y = y or emb2d.columns[1]
+
+    dfp = emb2d[[x, y]].copy()
+    dfp["Cluster"] = labels.astype(int).values
+
+    palette = _palette_for_labels(dfp["Cluster"])
+    sns.scatterplot(
+        data=dfp,
+        x=x,
+        y=y,
+        hue="Cluster",
+        palette=palette,
+        s=35,
+        linewidth=0.2,
+        edgecolor="white",
+        ax=ax,
+    )
+    ax.set_title(title)
+    ax.legend(title="Cluster", loc="best", frameon=True)
+    return ax
+
+def plot_cluster_sizes(labels, title="Cluster sizes", ax=None, sort_by="label"):
+    """
+    Horizontal bar chart with count and percentage.
+    sort_by: 'label' or 'size'
+    """
+    if ax is None:
+        ax = plt.gca()
+
+    counts = labels.value_counts()
+    if sort_by == "label":
+        counts = counts.sort_index()
+    elif sort_by == "size":
+        counts = counts.sort_values(ascending=True)
+
+    palette_map = _palette_for_labels(labels)
+    colors = [palette_map[k] for k in counts.index]
+
+    y = np.arange(len(counts))
+    ax.barh(y, counts.values, color=colors)
+    ax.set_yticks(y)
+    ax.set_yticklabels([str(k) for k in counts.index])
+    ax.set_xlabel("Number of patients")
+    ax.set_title(title)
+
+    total = counts.sum()
+    for i, (lab, val) in enumerate(counts.items()):
+        ax.text(val + max(1, 0.01 * total), i, f"{val} ({val/total:.1%})", va="center")
+
+    ax.set_xlim(0, counts.max() * 1.15)
+    return ax

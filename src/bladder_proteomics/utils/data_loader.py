@@ -79,146 +79,34 @@ def load_data(
 
 def validate_data(
     data: pd.DataFrame,
-    expected_samples: Optional[int] = 140,
-    expected_features: Optional[int] = 3121,
     check_missing: bool = True,
     check_duplicates: bool = True,
-    verbose: bool = True
 ) -> Dict[str, Any]:
-    """Validate proteomics data quality and structure.
-    
-    Checks for:
-    - Expected dimensions
-    - Missing values
-    - Duplicate samples/features
-    - Data type consistency
-    - Outliers
-    
-    Args:
-        data: Input data DataFrame
-        expected_samples: Expected number of samples (default: 140)
-        expected_features: Expected number of features (default: 3121)
-        check_missing: Check for missing values
-        check_duplicates: Check for duplicate rows/columns
-        verbose: Print validation report
-        
-    Returns:
-        Dictionary with validation results
-        
-    Examples:
-        >>> data = load_data("proteomics_data.csv")
-        >>> report = validate_data(data)
-    """
-    report = {
+    """Lightweight validation without mutating the data."""
+    report: Dict[str, Any] = {
         "shape": data.shape,
         "n_samples": data.shape[0],
         "n_features": data.shape[1],
-        "issues": [],
-        "warnings": []
     }
-    # Check for non-numeric columns
-    non_numeric = []
-    for col in data.columns:
-        if not pd.api.types.is_numeric_dtype(data[col]):
-            non_numeric.append(col)
 
-    if non_numeric:
-        report["non_numeric_features"] = non_numeric
-        report["warnings"].append(
-            f"Dropping {len(non_numeric)} non-numeric features: {non_numeric}"
-        )
-        data = data.drop(columns=non_numeric)
-    
-    # Check dimensions
-    if expected_samples is not None and data.shape[0] != expected_samples:
-        report["warnings"].append(
-            f"Expected {expected_samples} samples, found {data.shape[0]}"
-        )
-    
-    if expected_features is not None and data.shape[1] != expected_features:
-        report["warnings"].append(
-            f"Expected {expected_features} features, found {data.shape[1]}"
-        )
-    
-    # Check for missing values
     if check_missing:
-        missing = data.isnull().sum().sum()
-        if missing > 0:
-            missing_pct = 100 * missing / (data.shape[0] * data.shape[1])
-            report["missing_values"] = missing
-            report["missing_percentage"] = missing_pct
-            report["warnings"].append(
-                f"Found {missing} missing values ({missing_pct:.2f}%)"
-            )
-        else:
-            report["missing_values"] = 0
-    
-    # Check for duplicates
+        report["missing_values"] = int(data.isna().sum().sum())
+
     if check_duplicates:
-        dup_rows = data.duplicated().sum()
-        dup_cols = data.T.duplicated().sum()
-        
-        if dup_rows > 0:
-            report["duplicate_samples"] = dup_rows
-            report["issues"].append(f"Found {dup_rows} duplicate samples")
-        
-        if dup_cols > 0:
-            report["duplicate_features"] = dup_cols
-            report["issues"].append(f"Found {dup_cols} duplicate features")
-    
-    # Check data types
-    non_numeric = []
-    for col in data.columns:
-        if not pd.api.types.is_numeric_dtype(data[col]):
-            non_numeric.append(col)
-    
-    # if non_numeric:
-    #     report["non_numeric_features"] = non_numeric
-    #     report["warnings"].append(
-    #         f"Found {len(non_numeric)} non-numeric features"
-    #     )
-    
-    # Check for extreme outliers (values > 5 standard deviations)
-    # if len(non_numeric) < data.shape[1]:  # Only if we have numeric data
-    #     numeric_data = data.select_dtypes(include=[np.number])
-    #     z_scores = np.abs((numeric_data - numeric_data.mean()) / numeric_data.std())
-    #     extreme_outliers = (z_scores > 5).sum().sum()
-        
-    #     if extreme_outliers > 0:
-    #         report["extreme_outliers"] = extreme_outliers
-    #         report["warnings"].append(
-    #             f"Found {extreme_outliers} extreme outliers (>5 std)"
-    #         )
-    
-    # Print report if verbose
-    if verbose:
-        print("=" * 60)
-        print("DATA VALIDATION REPORT")
-        print("=" * 60)
-        print(f"Shape: {report['shape']} (samples × features)")
-        print(f"Samples: {report['n_samples']}")
-        print(f"Features: {report['n_features']}")
-        
-        if report.get("missing_values", 0) > 0:
-            print(f"\nMissing values: {report['missing_values']} ({report['missing_percentage']:.2f}%)")
-        else:
-            print("\nNo missing values detected")
-        
-        if report["issues"]:
-            print("\nISSUES:")
-            for issue in report["issues"]:
-                print(f"  ❌ {issue}")
-        
-        if report["warnings"]:
-            print("\nWARNINGS:")
-            for warning in report["warnings"]:
-                print(f"  ⚠️  {warning}")
-        
-        if not report["issues"] and not report["warnings"]:
-            print("\n✓ Data validation passed with no issues")
-        
-        print("=" * 60)
-    
+        report["duplicate_rows"] = int(data.duplicated().sum())
+        report["duplicate_cols"] = int(data.T.duplicated().sum())
+
+    # Print short summary
+    msg = [
+        f"Data shape (samples × features): {report['shape']}",
+    ]
+    if check_missing:
+        msg.append(f"Missing values: {report['missing_values']}")
+    if check_duplicates:
+        msg.append(f"Duplicate rows: {report['duplicate_rows']} | Duplicate columns: {report['duplicate_cols']}")
+
+    print("\n".join(msg))
+    print("=" * 60)
     return report
 
 

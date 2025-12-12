@@ -1,11 +1,48 @@
 """Clustering algorithms for proteomics data."""
 
+from typing import Optional, Tuple, Union
+
 import numpy as np
 import pandas as pd
-from sklearn.cluster import KMeans, AgglomerativeClustering
+from sklearn.cluster import AgglomerativeClustering, KMeans
 from sklearn.mixture import GaussianMixture
-from typing import Union, Tuple, Optional
 
+
+def _relabel_clusters_by_centroid(X, labels, axis=0):
+    """
+    Relabel clusters based on centroid position along a chosen axis.
+
+    Parameters
+    ----------
+    X : np.ndarray or pd.DataFrame
+        Data used for clustering (samples × features)
+    labels : np.ndarray
+        Original KMeans labels
+    axis : int
+        Which dimension to sort centroids by (default: 0 = PC1)
+
+    Returns
+    -------
+    labels_aligned : np.ndarray
+        Relabeled clusters with stable ordering
+    """
+    X_array = X.values if hasattr(X, "values") else X
+    unique_labels = np.unique(labels)
+
+    # Compute centroids
+    centroids = np.array([
+        X_array[labels == k].mean(axis=0)
+        for k in unique_labels
+    ])
+
+    # Sort clusters by centroid position along chosen axis
+    order = np.argsort(centroids[:, axis])
+
+    # Build mapping old_label → new_label
+    label_map = {unique_labels[old]: new for new, old in enumerate(order)}
+
+    labels_aligned = np.array([label_map[l] for l in labels])
+    return labels_aligned
 
 def kmeans_cluster(
     data: Union[np.ndarray, pd.DataFrame],
@@ -13,9 +50,11 @@ def kmeans_cluster(
     random_state: Optional[int] = 42,
     n_init: int = 10,
     max_iter: int = 300,
-    return_model: bool = False
+    return_model: bool = False,
+    align_labels: bool = False,
+    align_axis: int = 0
 ) -> Union[np.ndarray, Tuple[np.ndarray, KMeans]]:
-    """Apply KMeans clustering algorithm.
+    """Apply KMeans clustering algorithm with optional label alignment.
     
     KMeans partitions data into k clusters by minimizing within-cluster
     sum of squared distances to cluster centers.
@@ -27,6 +66,8 @@ def kmeans_cluster(
         n_init: Number of times the algorithm will run with different centroid seeds
         max_iter: Maximum number of iterations per run
         return_model: If True, also return the fitted model
+        align_labels: If True, relabel clusters based on centroid position
+        align_axis: Axis along which centroids are sorted (default: 0)
         
     Returns:
         Cluster labels for each sample, or tuple with model if return_model=True
@@ -48,6 +89,12 @@ def kmeans_cluster(
         max_iter=max_iter
     )
     labels = kmeans.fit_predict(data_array)
+
+    # Optional relabeling
+    if align_labels:
+        labels = _relabel_clusters_by_centroid(
+            data_array, labels, axis=align_axis
+        )
     
     if return_model:
         return labels, kmeans

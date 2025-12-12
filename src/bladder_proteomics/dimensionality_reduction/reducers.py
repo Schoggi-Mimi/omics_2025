@@ -1,9 +1,10 @@
 """Dimensionality reduction algorithms for proteomics data."""
 
+from typing import Optional, Tuple, Union
+
 import numpy as np
 import pandas as pd
 from sklearn.decomposition import PCA
-from typing import Union, Tuple, Optional
 
 try:
     import umap
@@ -175,3 +176,9 @@ def pca_elbow(explained_variance_ratio):
 
     elbow_idx = int(np.argmax(distances))
     return elbow_idx + 1
+
+def pc_names(df: pd.DataFrame, prefix: str = "PC") -> pd.DataFrame:
+    """Ensure PCA columns are named PC1..PCn (without changing values/order)."""
+    out = df.copy()
+    out.columns = [f"{prefix}{i+1}" for i in range(out.shape[1])]
+    return out
