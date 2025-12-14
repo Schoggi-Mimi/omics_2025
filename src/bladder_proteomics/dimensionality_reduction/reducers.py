@@ -1,6 +1,6 @@
 """Dimensionality reduction algorithms for proteomics data."""
 
-from typing import Optional, Tuple, Union
+from typing import Any, Callable, Dict, Optional, Tuple, Union
 
 import numpy as np
 import pandas as pd
@@ -182,3 +182,73 @@ def pc_names(df: pd.DataFrame, prefix: str = "PC") -> pd.DataFrame:
     out = df.copy()
     out.columns = [f"{prefix}{i+1}" for i in range(out.shape[1])]
     return out
+
+
+def _pca_diagnostics_one(
+    df_scaled: pd.DataFrame,
+    n_components: int,
+    var_threshold: float = 0.80,
+    elbow_fn: Callable[[np.ndarray], int] | None = None,
+) -> Dict[str, Any]:
+    """
+    Fit PCA and return a dict with:
+      scores, model, explained, cumulative, elbow_pc, pc80
+    """
+    if elbow_fn is None:
+        elbow_fn = pca_elbow
+
+    scores, model = apply_pca(df_scaled, n_components=n_components, return_model=True)
+    scores = pc_names(scores)
+
+    explained = model.explained_variance_ratio_
+    cumulative = np.cumsum(explained)
+
+    elbow_pc = int(elbow_fn(explained))                 # expected 1-indexed
+    pc80 = int(np.argmax(cumulative >= var_threshold) + 1)
+
+    return {
+        "scores": scores,               # pd.DataFrame (PC scores)
+        "model": model,                 # sklearn PCA object
+        "explained": explained,         # np.ndarray
+        "cumulative": cumulative,       # np.ndarray
+        "elbow_pc": elbow_pc,           # int (1-indexed)
+        "pc80": pc80,                   # int (1-indexed)
+        "n_components": int(len(explained)),
+        "var_threshold": float(var_threshold),
+    }
+
+
+def compare_pca_diagnostics(
+    df_scaled_full: pd.DataFrame,
+    df_scaled_clean: pd.DataFrame,
+    max_pcs: int = 50,
+    var_threshold: float = 0.80,
+    elbow_fn: Callable[[np.ndarray], int] | None = None,
+) -> Dict[str, Dict[str, Any]]:
+    """
+    Fit PCA on FULL and CLEAN matrices and return diagnostics dict:
+
+    {
+      "full": {...},
+      "clean": {...}
+    }
+
+    max_pcs is clipped to n_samples-1 for each dataset.
+    """
+    max_full = min(int(df_scaled_full.shape[0] - 1), int(max_pcs))
+    max_clean = min(int(df_scaled_clean.shape[0] - 1), int(max_pcs))
+
+    full = _pca_diagnostics_one(
+        df_scaled_full,
+        n_components=max_full,
+        var_threshold=var_threshold,
+        elbow_fn=elbow_fn,
+    )
+    clean = _pca_diagnostics_one(
+        df_scaled_clean,
+        n_components=max_clean,
+        var_threshold=var_threshold,
+        elbow_fn=elbow_fn,
+    )
+
+    return {"full": full, "clean": clean}

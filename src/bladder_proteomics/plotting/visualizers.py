@@ -1,6 +1,8 @@
 """Visualization functions for proteomics data."""
 
-from typing import List, Optional, Tuple, Union
+from __future__ import annotations
+
+from typing import Dict, List, Optional, Sequence, Tuple, Union
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -10,6 +12,8 @@ from matplotlib.axes import Axes
 from matplotlib.colors import ListedColormap
 from matplotlib.figure import Figure
 from matplotlib.lines import Line2D
+from sklearn.decomposition import PCA
+from sklearn.metrics import pairwise_distances_argmin_min, silhouette_score
 
 from ..clustering import compute_cluster_table
 
@@ -613,3 +617,242 @@ def plot_cluster_sizes(labels, title="Cluster sizes", ax=None, sort_by="label"):
 
     ax.set_xlim(0, counts.max() * 1.15)
     return ax
+
+
+# ---------- Global style / palette ----------
+
+PALETTE = {
+    "blue": "#4C72B0",
+    "orange": "#DD8452",
+    "green": "#55A868",
+    "red": "#C44E52",
+    "gray": "#7A7A7A",
+    "black": "#000000",
+}
+
+DEFAULT_CLUSTER_PALETTE = sns.color_palette("Set2")
+
+
+def set_plot_style(dpi: int = 120) -> None:
+    """
+    Call once per notebook (early).
+    Ensures consistent seaborn theme and matplotlib defaults across all plots.
+    """
+    sns.set_theme(style="whitegrid", context="notebook")
+    plt.rcParams["figure.dpi"] = dpi
+    plt.rcParams["savefig.dpi"] = 300
+    plt.rcParams["axes.titlesize"] = 13
+    plt.rcParams["axes.labelsize"] = 11
+    plt.rcParams["legend.fontsize"] = 10
+
+def get_cluster_colors(labels: Sequence[int]) -> Dict[int, str]:
+    """Map cluster labels -> consistent colors (Set2)."""
+    uniq = np.sort(pd.unique(pd.Series(labels)))
+    colors = {}
+    for i, lab in enumerate(uniq):
+        colors[int(lab)] = DEFAULT_CLUSTER_PALETTE[i % len(DEFAULT_CLUSTER_PALETTE)]
+    return colors
+
+
+def plot_log10_raw_distribution(
+    df_raw: pd.DataFrame,
+    bins: int = 60,
+    ax: Optional[plt.Axes] = None,
+    title: str = "log10(raw abundance) distribution",
+) -> plt.Axes:
+    """
+    Histogram of log10(raw values) pooled across all proteins and patients.
+    Diagnostic only (downstream uses log2 transform).
+    """
+    if ax is None:
+        _, ax = plt.subplots(1, 1, figsize=(6, 3))
+
+    flat = df_raw.to_numpy().ravel()
+    flat = flat[np.isfinite(flat)]
+    sns.histplot(np.log10(flat), bins=bins, ax=ax, color=PALETTE["blue"])
+    ax.set_title(title)
+    ax.set_xlabel("log10(value)")
+    ax.set_ylabel("Count")
+    return ax
+
+
+def plot_median_centering_diagnostics(
+    df_before: pd.DataFrame,
+    df_after: pd.DataFrame,
+) -> Tuple[plt.Figure, plt.Figure]:
+    """
+    Returns:
+      fig1: histogram of per-patient medians before vs after centering
+    """
+    med_before = df_before.median(axis=1)
+    med_after = df_after.median(axis=1)
+
+    fig1, axes = plt.subplots(1, 2, figsize=(10, 3.5), sharey=True)
+    sns.histplot(med_before, bins=25, kde=True, ax=axes[0], color=PALETTE["blue"])
+    axes[0].set_title("Per-patient median (before centering)")
+    axes[0].set_xlabel("Median log2 abundance")
+    axes[0].set_ylabel("Count")
+
+    sns.histplot(med_after, bins=25, kde=True, ax=axes[1], color=PALETTE["green"])
+    axes[1].set_title("Per-patient median (after centering)")
+    axes[1].set_xlabel("Median log2 abundance")
+
+    fig1.tight_layout()
+    return fig1
+
+
+# ---------- PCA plots ----------
+
+def plot_pca_scatter_with_outliers(
+    pca_df_2d: pd.DataFrame,
+    is_outlier: pd.Series,
+    ax: Optional[plt.Axes] = None,
+    title: str = "PCA (PC1 vs PC2) with outlier flags",
+) -> plt.Axes:
+    """
+    Scatter of PC1 vs PC2 colored by outlier flag.
+    Expects pca_df_2d to contain columns ['PC1', 'PC2'].
+    """
+    if ax is None:
+        _, ax = plt.subplots(1, 1, figsize=(5.5, 4))
+
+    plot_df = pca_df_2d.copy()
+    plot_df["outlier_flag"] = is_outlier.reindex(plot_df.index).map({False: "No", True: "Yes"})
+
+    sns.scatterplot(
+        data=plot_df, x="PC1", y="PC2",
+        hue="outlier_flag",
+        palette={"No": PALETTE["blue"], "Yes": PALETTE["red"]},
+        s=60, alpha=0.85, ax=ax
+    )
+    ax.set_title(title)
+    ax.legend(title="Outlier flagged", loc="best")
+    return ax
+
+
+def plot_scree_and_cumulative(
+    explained_full: np.ndarray,
+    explained_clean: Optional[np.ndarray] = None,
+    elbow_full: Optional[int] = None,
+    elbow_clean: Optional[int] = None,
+    var_line: float = 0.80,
+    plot_n: int = 20,
+    int_xticks: bool = True,
+) -> plt.Figure:
+    """
+    Consistent scree + cumulative plot (FULL vs CLEAN).
+    """
+    explained_full = np.asarray(explained_full)[:plot_n]
+    cum_full = np.cumsum(explained_full)
+
+    if explained_clean is not None:
+        explained_clean = np.asarray(explained_clean)[:plot_n]
+        cum_clean = np.cumsum(explained_clean)
+
+    xs = np.arange(1, len(explained_full) + 1)
+
+    fig, axes = plt.subplots(1, 2, figsize=(12, 4))
+
+    # Scree
+    axes[0].plot(xs, explained_full, marker="o", label="Full", color=PALETTE["blue"])
+    if explained_clean is not None:
+        axes[0].plot(xs, explained_clean, marker="o", label="Clean", color=PALETTE["orange"])
+    if elbow_full is not None:
+        axes[0].axvline(elbow_full, linestyle="--", color=PALETTE["black"], linewidth=1, label=f"Elbow(full)={elbow_full}")
+    if elbow_clean is not None:
+        axes[0].axvline(elbow_clean, linestyle="--", color=PALETTE["gray"], linewidth=1, label=f"Elbow(clean)={elbow_clean}")
+    axes[0].set_title("Scree plot (explained variance ratio)")
+    axes[0].set_xlabel("Principal component")
+    axes[0].set_ylabel("Explained variance ratio")
+    axes[0].legend()
+
+    # Cumulative
+    axes[1].plot(xs, cum_full, marker="o", label="Full", color=PALETTE["blue"])
+    if explained_clean is not None:
+        axes[1].plot(xs, cum_clean, marker="o", label="Clean", color=PALETTE["orange"])
+    axes[1].axhline(var_line, linestyle="--", color=PALETTE["black"], linewidth=1, label=f"{int(var_line*100)}% variance")
+    axes[1].set_title("Cumulative explained variance")
+    axes[1].set_xlabel("Number of PCs")
+    axes[1].set_ylabel("Cumulative explained variance")
+    axes[1].legend()
+
+    if int_xticks:
+        for ax in axes:
+            ax.set_xticks(xs)
+
+    fig.tight_layout()
+    return fig
+
+
+def plot_k_selection_grid(res_full, res_clean, n_pc: int, figsize=(12, 7)):
+    fig, axes = plt.subplots(2, 2, figsize=figsize)
+    plot_elbow(res_full["inertia"], ax=axes[0, 0], title=f"Elbow (FULL, n_PC={n_pc})")
+    plot_silhouette_scores(res_full["silhouette"], ax=axes[0, 1], title=f"Silhouette (FULL, n_PC={n_pc})")
+    plot_elbow(res_clean["inertia"], ax=axes[1, 0], title=f"Elbow (CLEAN, n_PC={n_pc})")
+    plot_silhouette_scores(res_clean["silhouette"], ax=axes[1, 1], title=f"Silhouette (CLEAN, n_PC={n_pc})")
+    fig.tight_layout()
+    return fig, axes
+
+
+def get_cluster_palette(k: int = 2) -> Sequence[str]:
+    """
+    Consistent colors across the whole report.
+    Uses seaborn 'colorblind' palette by default.
+    """
+    return sns.color_palette("colorblind", n_colors=k)
+
+
+def overlay_flagged_outliers_on_clean_pca(
+    df_scaled_clean: pd.DataFrame,
+    df_scaled_outliers: pd.DataFrame,
+    labels_clean: pd.Series,
+    n_pc: int,
+    title: str = "Clean clusters with flagged outliers (same PCA space)",
+    random_state: int = 42,
+    fig_size: Tuple[float, float] = (6.8, 4.4),
+) -> plt.Figure:
+    """
+    Supplementary plot:
+    Fit PCA on CLEAN only (n_pc), transform OUTLIERS with same PCA model,
+    then show PC1/PC2 with clean clusters colored + outliers as black X.
+    """
+    # Fit PCA on clean, transform both
+    pca = PCA(n_components=n_pc, random_state=random_state)
+    Z_clean = pca.fit_transform(df_scaled_clean.values)
+    Z_out = pca.transform(df_scaled_outliers.values)
+
+    clean_df = pd.DataFrame(Z_clean[:, :2], index=df_scaled_clean.index, columns=["PC1", "PC2"])
+    out_df = pd.DataFrame(Z_out[:, :2], index=df_scaled_outliers.index, columns=["PC1", "PC2"])
+
+    clean_df["Cluster"] = labels_clean.loc[clean_df.index].astype(int).values
+    palette = get_cluster_palette(k=len(np.unique(labels_clean)))
+
+    fig, ax = plt.subplots(1, 1, figsize=fig_size)
+
+    sns.scatterplot(
+        data=clean_df,
+        x="PC1",
+        y="PC2",
+        hue="Cluster",
+        palette=palette,
+        s=55,
+        alpha=0.85,
+        ax=ax,
+    )
+
+    sns.scatterplot(
+        data=out_df,
+        x="PC1",
+        y="PC2",
+        color="black",
+        marker="X",
+        s=90,
+        label="Flagged outlier",
+        ax=ax,
+    )
+
+    ax.set_title(title)
+    ax.legend(loc="best", title=None)
+    plt.tight_layout()
+    return fig
+

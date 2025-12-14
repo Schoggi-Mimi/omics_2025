@@ -1,10 +1,14 @@
 """Methods for determining optimal number of clusters."""
 
+from __future__ import annotations
+
+from typing import Dict, Iterable, List, Optional, Tuple, Union
+
 import numpy as np
 import pandas as pd
 from sklearn.cluster import KMeans
-from sklearn.metrics import silhouette_score, silhouette_samples
-from typing import Union, Dict, List, Optional, Tuple
+from sklearn.metrics import (adjusted_rand_score, silhouette_samples,
+                             silhouette_score)
 
 
 def silhouette_analysis(
@@ -166,3 +170,112 @@ def calculate_elbow_point(inertias: Dict[int, float]) -> int:
             elbow_idx = i
     
     return k_values[elbow_idx]
+
+
+
+def _fit_kmeans(X: np.ndarray, k: int, seed: int = 42, n_init: int = 50) -> Tuple[KMeans, np.ndarray]:
+    km = KMeans(n_clusters=k, n_init=n_init, random_state=seed)
+    labels = km.fit_predict(X)
+    return km, labels
+
+
+def align_labels_by_pc1(X: np.ndarray, labels: np.ndarray) -> np.ndarray:
+    """
+    Deterministic label alignment: sort clusters by mean PC1 and relabel to 0..k-1.
+    Helpful to keep plots/tables consistent across runs.
+    """
+    unique = np.unique(labels)
+    means = {lab: float(np.mean(X[labels == lab, 0])) for lab in unique}
+    order = sorted(unique, key=lambda lab: means[lab])
+    mapping = {old: new for new, old in enumerate(order)}
+    return np.vectorize(mapping.get)(labels)
+
+
+def compute_inertia_curve(X: np.ndarray, k_range: Iterable[int], seed: int = 42, n_init: int = 50) -> Dict[int, float]:
+    inertias = {}
+    for k in k_range:
+        km, _ = _fit_kmeans(X, k=k, seed=seed, n_init=n_init)
+        inertias[int(k)] = float(km.inertia_)
+    return inertias
+
+
+def compute_silhouette_curve(X: np.ndarray, k_range: Iterable[int], seed: int = 42, n_init: int = 50,
+                            align_labels: bool = False) -> Dict[int, float]:
+    sil = {}
+    for k in k_range:
+        _, labels = _fit_kmeans(X, k=int(k), seed=seed, n_init=n_init)
+        if align_labels:
+            labels = align_labels_by_pc1(X, labels)
+        sil[int(k)] = float(silhouette_score(X, labels))
+    return sil
+
+
+def cluster_size_dict(labels: np.ndarray) -> Dict[int, int]:
+    vc = pd.Series(labels).value_counts().sort_index()
+    return {int(k): int(v) for k, v in vc.items()}
+
+def passes_min_cluster_size(labels: np.ndarray, min_size: int = 10) -> bool:
+    counts = pd.Series(labels).value_counts()
+    return bool((counts >= min_size).all())
+
+
+def ari_stability_init(
+        X: pd.DataFrame,
+        k: int,
+        seeds: Iterable[int] = range(10),
+        n_init: int = 1,   # IMPORTANT: initialization sensitivity -> use n_init=1
+    ) -> Tuple[float, float]:
+    Xv = X.values if hasattr(X, "values") else X
+    all_labels = []
+    for sd in seeds:
+        km = KMeans(n_clusters=k, n_init=n_init, random_state=sd)
+        all_labels.append(km.fit_predict(Xv))
+
+    aris = []
+    for i in range(len(all_labels)):
+        for j in range(i + 1, len(all_labels)):
+            aris.append(adjusted_rand_score(all_labels[i], all_labels[j]))
+
+    return float(np.mean(aris)), float(np.std(aris))
+
+
+def evaluate_k_selection_one(X_df: pd.DataFrame, k_max: int = 20) -> Dict:
+    """
+    Returns inertia curve (k=1..k_max), silhouette curve (k=2..k_max),
+    elbow_k (optional), best_k_sil, and sizes at best_k_sil.
+    """
+    X = X_df.values
+
+    sil = silhouette_analysis(X, range(2, k_max + 1))
+    inertia = elbow_method(X, range(1, k_max + 1))
+    elbow = calculate_elbow_point(inertia)
+    best_k = max(sil, key=sil.get)
+
+    return {
+        "inertia": inertia,
+        "silhouette": sil,
+        "elbow_k": elbow,
+        "best_k_sil": int(best_k),
+        "best_sil": float(sil[best_k]),
+    }
+
+def pc_sensitivity_best_k(pca_df: pd.DataFrame, pc_grid: List[int], k_max: int = 20,
+                          seed: int = 42, n_init: int = 50, align_labels: bool = True) -> pd.DataFrame:
+    rows = []
+    for npc in pc_grid:
+        X = pca_df.iloc[:, :npc].values
+        sil = compute_silhouette_curve(X, range(2, k_max + 1), seed=seed, n_init=n_init, align_labels=align_labels)
+        best_k = max(sil, key=sil.get)
+
+        _, lab = _fit_kmeans(X, k=int(best_k), seed=seed, n_init=n_init)
+        if align_labels:
+            lab = align_labels_by_pc1(X, lab)
+
+        rows.append({
+            "n_pc": int(npc),
+            "best_k_sil": int(best_k),
+            "best_sil": float(sil[best_k]),
+            "sizes": cluster_size_dict(lab),
+        })
+    return pd.DataFrame(rows)
+

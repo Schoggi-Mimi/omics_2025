@@ -55,7 +55,10 @@ def load_data(
         data = data.T
 
     # Remove duplicate columns if any
-    data = data.loc[:, ~data.columns.duplicated()]
+    n_before = data.shape[1]
+    data = data.loc[:, ~data.T.duplicated()] # protein features removed
+    n_removed_profiles = n_before - data.shape[1]
+    print(f"Removed proteins with identical profiles: {n_removed_profiles}")
     # Load metadata if provided
     if metadata_path is not None:
         metadata_path = Path(metadata_path)

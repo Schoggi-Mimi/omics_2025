@@ -1,6 +1,8 @@
 """Data transformation and filtering functions for proteomics data."""
 
-from typing import Tuple, Union
+from __future__ import annotations
+
+from typing import Dict, Optional, Tuple, Union
 
 import numpy as np
 import pandas as pd
@@ -154,3 +156,50 @@ def variance_filter(
     mask = variances >= threshold
     filtered_data = data[:, mask]
     return filtered_data, mask
+
+
+def log2_transform(
+    df: pd.DataFrame,
+    pseudocount: Union[str, float] = "auto",
+    min_positive_factor: float = 0.5,
+) -> Tuple[pd.DataFrame, Dict[str, float]]:
+    """
+    log2 transform for non-negative abundance matrices.
+
+    Behavior:
+    - If negatives exist: raise (log transform not valid).
+    - If zeros exist:
+        - pseudocount="auto" -> use 0.5 * min_positive (more defensible than +1 on arbitrary scales)
+        - pseudocount=float  -> use that value
+    - If no zeros: use log2(x) without offset.
+
+    Returns:
+      df_log2, info dict (has_zero, pseudocount_used)
+    """
+    if (df.values < 0).any():
+        raise ValueError(
+            "Detected negative values in proteomics matrix. "
+            "Log2 transform is not valid as-is. Use shift+log and justify it."
+        )
+
+    has_zero = bool((df.values == 0).any())
+    info: Dict[str, float] = {"has_zero": float(has_zero), "pseudocount_used": 0.0}
+
+    if has_zero:
+        if pseudocount == "auto":
+            min_pos = df[df > 0].min().min()
+            if not np.isfinite(min_pos) or min_pos <= 0:
+                raise ValueError("Zeros detected but could not find a positive minimum value to set pseudocount.")
+            pc = float(min_positive_factor) * float(min_pos)
+        else:
+            pc = float(pseudocount)
+
+        info["pseudocount_used"] = pc
+        return np.log2(df + pc), info
+
+    return np.log2(df), info
+
+
+def median_center_rows(df_log: pd.DataFrame) -> pd.DataFrame:
+    """Per-patient (row-wise) median centering on log scale."""
+    return df_log.sub(df_log.median(axis=1), axis=0)
