@@ -279,3 +279,49 @@ def pc_sensitivity_best_k(pca_df: pd.DataFrame, pc_grid: List[int], k_max: int =
         })
     return pd.DataFrame(rows)
 
+def gap_statistic(X, k_max=20, B=50, random_state=42, n_init=10):
+    """
+    Compute Gap Statistic for k=1..k_max and return optimal k.
+    Args:
+        X: DataFrame or array-like, shape (n_samples, n_features)
+        k_max: Maximum number of clusters to evaluate
+        B: Number of reference datasets to generate
+        random_state: Random seed for reproducibility
+        n_init: Number of initializations for KMeans
+    Returns:
+        gap: Array of gap values for each k
+        se: Standard error of gap values
+        wk: Within-cluster dispersion for each k
+        optimal_k: Optimal number of clusters determined by the gap statistic
+    """
+    rng = np.random.default_rng(random_state)
+    mins = X.min(axis=0)
+    maxs = X.max(axis=0)
+
+    wk = np.zeros(k_max)
+    gap = np.zeros(k_max)
+    se = np.zeros(k_max)
+
+    for k in range(1, k_max + 1):
+        km = KMeans(n_clusters=k, n_init=n_init, random_state=random_state)
+        km.fit(X)
+        wk[k - 1] = km.inertia_
+
+        ref_wk = np.zeros(B)
+        for b in range(B):
+            X_ref = rng.uniform(mins, maxs, size=X.shape)
+            km_ref = KMeans(n_clusters=k, n_init=n_init, random_state=random_state)
+            km_ref.fit(X_ref)
+            ref_wk[b] = km_ref.inertia_
+
+        gap[k - 1] = ref_wk.mean() - wk[k - 1]
+        se[k - 1] = ref_wk.std(ddof=1) / np.sqrt(B)
+
+    optimal_k = k_max
+    for k in range(1, k_max):
+        if gap[k - 1] >= gap[k] - se[k]:
+            optimal_k = k
+            break
+
+    return gap, se, wk, optimal_k
+

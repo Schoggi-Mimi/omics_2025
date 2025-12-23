@@ -3,11 +3,12 @@
 Provides functions for determining optimal number of clusters including:
 - Silhouette score analysis
 - Elbow method
+- Gap statistic
 """
 
 from .methods import (ari_stability_init, calculate_elbow_point, elbow_method,
                       evaluate_k_selection_one, passes_min_cluster_size,
-                      pc_sensitivity_best_k, silhouette_analysis)
+                      pc_sensitivity_best_k, silhouette_analysis, gap_statistic)
 
 __all__ = [
     "silhouette_analysis",
@@ -17,4 +18,5 @@ __all__ = [
     "ari_stability_init",
     "passes_min_cluster_size",
     "pc_sensitivity_best_k",
+    "gap_statistic",
 ]
